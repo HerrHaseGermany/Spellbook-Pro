@@ -5,4 +5,5 @@
 ## Version: 0.1.0
 ## SavedVariables: SpellbookProDB
 
+SpellbookPro_SpellDB.lua
 Spellbook-Pro.lua
