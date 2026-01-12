@@ -188,7 +188,35 @@ local function GetVisibleCount()
 end
 
 local BUTTON_HEIGHT = 32
-local VISIBLE_ROWS = 12
+local VISIBLE_ROWS = 10
+
+local function UpdateClassTabHighlights(frame)
+	if not frame or not frame.classTabButtons then
+		return
+	end
+
+	local selected = frame.selectedClassTabIndex or 1
+	for i = 1, 3 do
+		local button = frame.classTabButtons[i]
+		if button then
+			if i == selected then
+				if button.LockHighlight then
+					button:LockHighlight()
+				end
+				if button.SetButtonState then
+					button:SetButtonState("PUSHED", true)
+				end
+			else
+				if button.UnlockHighlight then
+					button:UnlockHighlight()
+				end
+				if button.SetButtonState then
+					button:SetButtonState("NORMAL", false)
+				end
+			end
+		end
+	end
+end
 
 local function UpdateScroll()
 	if not SpellbookProFrame then
@@ -253,6 +281,7 @@ local function RebuildEntries()
 		selectedTabIndex = 1
 	end
 	SpellbookProFrame.selectedClassTabIndex = selectedTabIndex
+	UpdateClassTabHighlights(SpellbookProFrame)
 
 	local spellTabIndex = classTabIndices[selectedTabIndex]
 	allEntries = CollectSpellbookEntries(spellTabIndex)
@@ -341,6 +370,16 @@ local function CreateMainWindow()
 	macroButton:SetSize(96, 22)
 	macroButton:SetPoint("BOTTOM", frame, "BOTTOM", 0, 14)
 	macroButton:SetText("Edit Macros")
+	macroButton:SetScript("OnEnter", function(self)
+		GameTooltip:SetOwner(self, "ANCHOR_TOP")
+		GameTooltip:AddLine("Edit Macros")
+		GameTooltip:AddLine("Opens the Blizzard macro window.", 1, 1, 1, true)
+		GameTooltip:AddLine("If you edit a Spellbook-Pro macro, rename it first or it may be overwritten the next time Spellbook-Pro updates it.", 1, 0.82, 0, true)
+		GameTooltip:Show()
+	end)
+	macroButton:SetScript("OnLeave", function()
+		GameTooltip:Hide()
+	end)
 	macroButton:SetScript("OnClick", function()
 		if InCombatLockdown() then
 			UIErrorsFrame:AddMessage("Spellbook-Pro: Can't open macros during combat", 1, 0.2, 0.2)
@@ -386,22 +425,23 @@ local function CreateMainWindow()
 	frame.selectedClassTabIndex = SpellbookProDB.selectedClassTabIndex or 1
 
 	frame.classTabButtons = {}
-	for i = 1, 3 do
-		local tabButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-		tabButton:SetSize(104, 20)
-		tabButton:SetPoint("TOPLEFT", 18 + (i - 1) * 112, -94)
-		tabButton:SetText("Tab " .. i)
-		tabButton:SetScript("OnClick", function()
-			if InCombatLockdown() then
-				UIErrorsFrame:AddMessage("Spellbook-Pro: Can't refresh during combat", 1, 0.2, 0.2)
-				return
-			end
-			frame.selectedClassTabIndex = i
-			SpellbookProDB.selectedClassTabIndex = i
-			RebuildEntries()
-		end)
-		frame.classTabButtons[i] = tabButton
-	end
+		for i = 1, 3 do
+			local tabButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+			tabButton:SetSize(104, 20)
+			tabButton:SetPoint("TOPLEFT", 18 + (i - 1) * 112, -94)
+			tabButton:SetText("Tab " .. i)
+			tabButton:SetScript("OnClick", function()
+				if InCombatLockdown() then
+					UIErrorsFrame:AddMessage("Spellbook-Pro: Can't refresh during combat", 1, 0.2, 0.2)
+					return
+				end
+				frame.selectedClassTabIndex = i
+				SpellbookProDB.selectedClassTabIndex = i
+				UpdateClassTabHighlights(frame)
+				RebuildEntries()
+			end)
+			frame.classTabButtons[i] = tabButton
+		end
 
 	local help = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
 	help:SetPoint("TOPLEFT", 24, -126)
@@ -409,7 +449,7 @@ local function CreateMainWindow()
 
 	local scrollFrame = CreateFrame("ScrollFrame", nil, frame, "FauxScrollFrameTemplate")
 	scrollFrame:SetPoint("TOPLEFT", 18, -138)
-	scrollFrame:SetPoint("BOTTOMRIGHT", -36, 18)
+	scrollFrame:SetPoint("BOTTOMRIGHT", -36, 46)
 	scrollFrame:SetScript("OnVerticalScroll", function(self, offset)
 		FauxScrollFrame_OnVerticalScroll(self, offset, BUTTON_HEIGHT, UpdateScroll)
 	end)
