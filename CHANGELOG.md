@@ -1,5 +1,8 @@
 ## CHANGELOG
 
+# 1.0.2
+- fixed instance version
+
 # 1.0.1
 - Fixed Spellbook Tab Highlite
 - Added tooltip on `Edit Macros` button warning to rename edited Spellbook-Pro macros to avoid them being overwritten.
