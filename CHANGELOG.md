@@ -1,5 +1,9 @@
 ## CHANGELOG
 
+# 1.1
+- Add Level and Cost requirements
+- fixed sorting
+
 # 1.0.2
 - fixed instance version
 

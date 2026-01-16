@@ -39,6 +39,9 @@ class SpellRank:
     spell_id: int
     name: str
     rank: str
+    level: int
+    training_cost: int
+    spec_id: int
 
 
 def fetch(url: str) -> str:
@@ -112,9 +115,24 @@ def class_spells_from_listview(listview: list[dict[str, Any]], class_mask: int) 
         spell_id = row.get("id")
         name = (row.get("name") or "").strip()
         rank = normalize_rank((row.get("rank") or "").strip())
+        level = row.get("level")
+        training_cost = row.get("trainingcost")
+        skill = row.get("skill")
         if not isinstance(spell_id, int) or not name:
             continue
-        ranks.append(SpellRank(spell_id=spell_id, name=name, rank=rank))
+        spec_id = 0
+        if isinstance(skill, list) and skill and isinstance(skill[0], int):
+            spec_id = int(skill[0])
+        ranks.append(
+            SpellRank(
+                spell_id=spell_id,
+                name=name,
+                rank=rank,
+                level=int(level) if isinstance(level, int) else 0,
+                training_cost=int(training_cost) if isinstance(training_cost, int) else 0,
+                spec_id=spec_id,
+            )
+        )
 
     ranks.sort(key=lambda r: (r.name.lower(), rank_number(r.rank), r.spell_id))
     return ranks
@@ -138,7 +156,9 @@ def emit_lua(db: dict[str, dict[str, list[SpellRank]]]) -> str:
             out.append(f'      ["{lua_escape(spell_name)}"] = {{')
             for rank in spells[spell_name]:
                 rank_str = lua_escape(rank.rank)
-                out.append(f'        {{ id = {rank.spell_id}, rank = "{rank_str}" }},')
+                out.append(
+                    f'        {{ id = {rank.spell_id}, rank = "{rank_str}", level = {rank.level}, cost = {rank.training_cost}, spec = {rank.spec_id} }},'
+                )
             out.append("      },")
         out.append("    },")
 

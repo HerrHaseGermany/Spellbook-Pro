@@ -27,6 +27,125 @@ eventFrame:RegisterEvent("PLAYER_LOGIN")
 eventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
 eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 
+local unlearnedLabelBySpellID = {}
+local classSpellInfoByID = {}
+local classSpecByTabIndex = {}
+local CollectSpellbookEntries
+
+local function FormatCopper(copper)
+	copper = tonumber(copper) or 0
+	if copper <= 0 then
+		return nil
+	end
+
+	local gold = math.floor(copper / 10000)
+	local silver = math.floor((copper % 10000) / 100)
+	local copperOnly = copper % 100
+
+	local text = ""
+	if gold > 0 then
+		text = gold .. "g"
+	end
+	if silver > 0 then
+		if text ~= "" then
+			text = text .. " "
+		end
+		text = text .. silver .. "s"
+	end
+	if copperOnly > 0 or text == "" then
+		if text ~= "" then
+			text = text .. " "
+		end
+		text = text .. copperOnly .. "c"
+	end
+	return text
+end
+
+local function BuildUnlearnedLabelFromDB(spellID, requiredLevel, trainingCost)
+	spellID = tonumber(spellID)
+	if not spellID then
+		return nil
+	end
+	local cached = unlearnedLabelBySpellID[spellID]
+	if cached ~= nil then
+		return cached
+	end
+
+	requiredLevel = tonumber(requiredLevel) or 0
+	trainingCost = tonumber(trainingCost) or 0
+	if trainingCost <= 0 then
+		unlearnedLabelBySpellID[spellID] = false
+		return nil
+	end
+
+	local parts = {}
+	if requiredLevel > 0 then
+		parts[#parts + 1] = "Lv " .. requiredLevel
+	end
+	local money = FormatCopper(trainingCost)
+	if money then
+		parts[#parts + 1] = money
+	end
+
+	if #parts == 0 then
+		unlearnedLabelBySpellID[spellID] = false
+		return nil
+	end
+
+	local label = " (" .. table.concat(parts, ", ") .. ")"
+	unlearnedLabelBySpellID[spellID] = label
+	return label
+end
+
+local function BuildClassSpellIndex(classToken)
+	if classSpellInfoByID[classToken] then
+		return classSpellInfoByID[classToken]
+	end
+
+	local infoByID = {}
+	local classSpells = SpellbookProSpellDB and SpellbookProSpellDB.classes and SpellbookProSpellDB.classes[classToken]
+	if type(classSpells) == "table" then
+		for _, ranks in pairs(classSpells) do
+			if type(ranks) == "table" then
+				for _, rankInfo in ipairs(ranks) do
+					if type(rankInfo) == "table" and type(rankInfo.id) == "number" then
+						infoByID[rankInfo.id] = {
+							level = tonumber(rankInfo.level) or 0,
+							cost = tonumber(rankInfo.cost) or 0,
+							spec = tonumber(rankInfo.spec) or 0,
+						}
+					end
+				end
+			end
+		end
+	end
+
+	classSpellInfoByID[classToken] = infoByID
+	return infoByID
+end
+
+local function GuessSpecForTab(tabIndex, classToken, infoByID)
+	local entries = CollectSpellbookEntries(tabIndex)
+	local counts = {}
+	for _, entry in ipairs(entries) do
+		local id = entry and entry.spellID
+		local info = id and infoByID[id]
+		local spec = info and info.spec
+		if spec and spec ~= 0 then
+			counts[spec] = (counts[spec] or 0) + 1
+		end
+	end
+
+	local bestSpec, bestCount = nil, 0
+	for spec, count in pairs(counts) do
+		if count > bestCount or (count == bestCount and (not bestSpec or spec < bestSpec)) then
+			bestSpec, bestCount = spec, count
+		end
+	end
+	return bestSpec
+end
+
+
 local function GetPlayerClassToken()
 	local _, classToken = UnitClass("player")
 	return classToken
@@ -115,7 +234,7 @@ local function GetClassTabIndices()
 	return indices
 end
 
-local function CollectSpellbookEntries(tabIndex)
+CollectSpellbookEntries = function(tabIndex)
 	local entries = {}
 	local tabName, _, tabOffset, numSpells = GetSpellTabInfo(tabIndex)
 	if not tabName then
@@ -238,7 +357,20 @@ local function UpdateScroll()
 			button:Show()
 			button.icon:SetTexture(entry.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
 			button.icon:SetDesaturated(not entry.learned)
-			button.name:SetText(entry.name)
+			if entry.learned then
+				button.name:SetText(entry.name)
+			else
+				local label = entry.label
+				if label == nil and entry.spellID then
+					label = BuildUnlearnedLabelFromDB(entry.spellID, entry.reqLevel, entry.trainCost)
+					entry.label = label or false
+				end
+				if label and label ~= false then
+					button.name:SetText(entry.name .. label)
+				else
+					button.name:SetText(entry.name)
+				end
+			end
 			if entry.learned then
 				button.name:SetTextColor(1, 1, 1)
 			else
@@ -261,6 +393,15 @@ local function RebuildEntries()
 	end
 
 	classTabIndices = GetClassTabIndices()
+	local classToken = GetPlayerClassToken()
+	local infoByID = BuildClassSpellIndex(classToken)
+	for i = 1, 3 do
+		local tabIndex = classTabIndices[i]
+		if tabIndex then
+			classSpecByTabIndex[tabIndex] = GuessSpecForTab(tabIndex, classToken, infoByID)
+		end
+	end
+
 	for i = 1, 3 do
 		local button = SpellbookProFrame.classTabButtons and SpellbookProFrame.classTabButtons[i]
 		local tabIndex = classTabIndices[i]
@@ -287,32 +428,66 @@ local function RebuildEntries()
 	allEntries = CollectSpellbookEntries(spellTabIndex)
 
 	local learnedByName = {}
+	local learnedByID = {}
 	for _, entry in ipairs(allEntries) do
 		learnedByName[entry.name] = true
+		if entry.spellID then
+			learnedByID[entry.spellID] = true
+		end
 	end
 
 	local showUnlearned = SpellbookProFrame.showUnlearnedCheck and SpellbookProFrame.showUnlearnedCheck:GetChecked()
 	if showUnlearned then
-		local classToken = GetPlayerClassToken()
+		local selectedSpec = classSpecByTabIndex[spellTabIndex]
 		local classSpells = SpellbookProSpellDB and SpellbookProSpellDB.classes and SpellbookProSpellDB.classes[classToken]
 		if classSpells then
+			local function IsKnownSpellID(spellID)
+				if learnedByID[spellID] then
+					return true
+				end
+				if type(IsPlayerSpell) == "function" and IsPlayerSpell(spellID) then
+					return true
+				end
+				if type(IsSpellKnown) == "function" and IsSpellKnown(spellID) then
+					return true
+				end
+				return false
+			end
+
 			for spellName, ranks in pairs(classSpells) do
-				if type(spellName) == "string" and type(ranks) == "table" and not learnedByName[spellName] and ShouldIncludeSpellForFaction(spellName) then
-					local bestID
+				if type(spellName) == "string" and type(ranks) == "table" and ShouldIncludeSpellForFaction(spellName) then
+					local nextRank
 					for _, rankInfo in ipairs(ranks) do
-						if type(rankInfo) == "table" and type(rankInfo.id) == "number" then
-							bestID = rankInfo.id
+						if type(rankInfo) == "table" and type(rankInfo.id) == "number" and not IsKnownSpellID(rankInfo.id) then
+							nextRank = rankInfo
+							break
 						end
 					end
-					table.insert(allEntries, {
-						name = spellName,
-						subName = "",
-						icon = "Interface\\Icons\\INV_Misc_QuestionMark",
-						spellID = bestID,
-						bookSlot = nil,
-						bookType = nil,
-						learned = false,
-					})
+					if nextRank and type(nextRank.id) == "number" then
+						local specID = tonumber(nextRank.spec) or 0
+						if selectedSpec and selectedSpec ~= 0 and specID ~= 0 and specID ~= selectedSpec then
+							nextRank = nil
+						end
+					end
+					if nextRank and type(nextRank.id) == "number" then
+						local localizedName, localizedRank, localizedIcon
+						if GetSpellInfo then
+							localizedName, localizedRank, localizedIcon = GetSpellInfo(nextRank.id)
+						end
+						local label = BuildUnlearnedLabelFromDB(nextRank.id, nextRank.level, nextRank.cost)
+						table.insert(allEntries, {
+							name = localizedName or spellName,
+							subName = localizedRank or nextRank.rank or "",
+							icon = localizedIcon or (GetSpellTexture and (GetSpellTexture(nextRank.id) or "Interface\\Icons\\INV_Misc_QuestionMark") or "Interface\\Icons\\INV_Misc_QuestionMark"),
+							spellID = nextRank.id,
+							reqLevel = nextRank.level or 0,
+							trainCost = nextRank.cost or 0,
+							bookSlot = nil,
+							bookType = nil,
+							learned = false,
+							label = label or false,
+						})
+					end
 				end
 			end
 		end
@@ -321,6 +496,26 @@ local function RebuildEntries()
 	table.sort(allEntries, function(a, b)
 		if a.learned ~= b.learned then
 			return a.learned and not b.learned
+		end
+		if not a.learned then
+			local aHasTrainerCost = (tonumber(a.trainCost) or 0) > 0
+			local bHasTrainerCost = (tonumber(b.trainCost) or 0) > 0
+			if aHasTrainerCost ~= bHasTrainerCost then
+				return aHasTrainerCost and not bHasTrainerCost
+			end
+			if aHasTrainerCost then
+			local aLevel = tonumber(a.reqLevel) or 0
+			local bLevel = tonumber(b.reqLevel) or 0
+			if aLevel <= 0 then
+				aLevel = 999
+			end
+			if bLevel <= 0 then
+				bLevel = 999
+			end
+			if aLevel ~= bLevel then
+				return aLevel < bLevel
+			end
+			end
 		end
 		return a.name < b.name
 	end)
