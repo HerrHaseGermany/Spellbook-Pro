@@ -1,5 +1,8 @@
 ## CHANGELOG
 
+# 1.1.1
+- Highlite available spells
+
 # 1.1
 - Add Level and Cost requirements
 - fixed sorting

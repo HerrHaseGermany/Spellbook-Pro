@@ -344,6 +344,11 @@ local function UpdateScroll()
 
 	RefreshFilter()
 
+	local playerLevel = 0
+	if UnitLevel then
+		playerLevel = tonumber(UnitLevel("player")) or 0
+	end
+
 	local total = GetVisibleCount()
 	FauxScrollFrame_Update(SpellbookProFrame.scrollFrame, total, VISIBLE_ROWS, BUTTON_HEIGHT)
 
@@ -374,7 +379,12 @@ local function UpdateScroll()
 			if entry.learned then
 				button.name:SetTextColor(1, 1, 1)
 			else
-				button.name:SetTextColor(0.7, 0.7, 0.7)
+				local requiredLevel = tonumber(entry.reqLevel) or 0
+				if requiredLevel > 0 and playerLevel > 0 and requiredLevel <= playerLevel then
+					button.name:SetTextColor(1, 0.82, 0)
+				else
+					button.name:SetTextColor(0.7, 0.7, 0.7)
+				end
 			end
 
 			button:SetAttribute("type", "macro")
