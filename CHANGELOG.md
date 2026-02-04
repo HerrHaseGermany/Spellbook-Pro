@@ -1,5 +1,8 @@
 ## CHANGELOG
 
+# 1.1.3
+- license update
+
 # 1.1.1
 - Highlite available spells
 
