@@ -3,6 +3,30 @@ local ADDON_NAME = ...
 SpellbookProDB = SpellbookProDB or {}
 SpellbookProSpellDB = SpellbookProSpellDB or { version = 1, classes = {} }
 
+local function IsBurningCrusadeClassic()
+	if WOW_PROJECT_ID and WOW_PROJECT_BURNING_CRUSADE_CLASSIC then
+		return WOW_PROJECT_ID == WOW_PROJECT_BURNING_CRUSADE_CLASSIC
+	end
+	if type(GetBuildInfo) == "function" then
+		local _, _, _, interface = GetBuildInfo()
+		interface = tonumber(interface) or 0
+		return interface >= 20000 and interface < 30000
+	end
+	return false
+end
+
+local function ResolveSpellDB()
+	if IsBurningCrusadeClassic() and type(SpellbookProSpellDB_BCC) == "table" then
+		return SpellbookProSpellDB_BCC
+	end
+	if type(SpellbookProSpellDB) == "table" then
+		return SpellbookProSpellDB
+	end
+	return { version = 1, classes = {} }
+end
+
+local ActiveSpellDB = ResolveSpellDB()
+
 local DEFAULTS = {
 	showGeneralTab = false,
 	showOtherTabs = false,
@@ -10,6 +34,7 @@ local DEFAULTS = {
 	buttonScale = 1.0,
 	minimapAngle = 225,
 	showUnlearned = false,
+	startAttackMacros = false,
 	selectedClassTabIndex = 1,
 }
 
@@ -31,6 +56,16 @@ local unlearnedLabelBySpellID = {}
 local classSpellInfoByID = {}
 local classSpecByTabIndex = {}
 local CollectSpellbookEntries
+
+local function GetSpellRequiredLevel(spellID)
+	if type(GetSpellLevelLearned) == "function" then
+		local level = GetSpellLevelLearned(spellID)
+		if type(level) == "number" then
+			return level
+		end
+	end
+	return 0
+end
 
 local function FormatCopper(copper)
 	copper = tonumber(copper) or 0
@@ -103,7 +138,7 @@ local function BuildClassSpellIndex(classToken)
 	end
 
 	local infoByID = {}
-	local classSpells = SpellbookProSpellDB and SpellbookProSpellDB.classes and SpellbookProSpellDB.classes[classToken]
+	local classSpells = ActiveSpellDB and ActiveSpellDB.classes and ActiveSpellDB.classes[classToken]
 	if type(classSpells) == "table" then
 		for _, ranks in pairs(classSpells) do
 			if type(ranks) == "table" then
@@ -153,6 +188,64 @@ end
 
 local function BuildSBPMacroBody(spellName, key)
 	return "#showtooltip " .. spellName .. "\n/cast " .. spellName .. "\n#sbp " .. key
+end
+
+local function IsDamageSpell(entry)
+	if not entry then
+		return false
+	end
+
+	if entry.bookSlot and type(IsAttackSpell) == "function" then
+		if IsAttackSpell(entry.bookSlot, entry.bookType or "spell") then
+			return true
+		end
+	end
+	if entry.bookSlot and type(IsHarmfulSpell) == "function" then
+		if IsHarmfulSpell(entry.bookSlot, entry.bookType or "spell") then
+			return true
+		end
+	end
+
+	local spellID = entry.spellID
+	local spellName = entry.name
+	if type(IsAttackSpell) == "function" then
+		if spellID and IsAttackSpell(spellID) then
+			return true
+		end
+		if spellName and IsAttackSpell(spellName) then
+			return true
+		end
+	end
+	if type(IsHarmfulSpell) == "function" then
+		if spellID and IsHarmfulSpell(spellID) then
+			return true
+		end
+		if spellName and IsHarmfulSpell(spellName) then
+			return true
+		end
+	end
+	return false
+end
+
+local function ShouldStartAttack(entry)
+	if not SpellbookProDB.startAttackMacros then
+		return false
+	end
+	return IsDamageSpell(entry)
+end
+
+local function BuildMacroText(spellName, startAttack)
+	if startAttack then
+		return "#showtooltip " .. spellName .. "\n/startattack\n/cast " .. spellName
+	end
+	return "#showtooltip " .. spellName .. "\n/cast " .. spellName
+end
+
+local function BuildSBPMacroBodyWithStartAttack(spellName, key, startAttack)
+	if startAttack then
+		return "#showtooltip " .. spellName .. "\n/startattack\n/cast " .. spellName .. "\n#sbp " .. key
+	end
+	return BuildSBPMacroBody(spellName, key)
 end
 
 local function ShouldIncludeSpellForFaction(spellName)
@@ -234,7 +327,7 @@ local function GetClassTabIndices()
 	return indices
 end
 
-CollectSpellbookEntries = function(tabIndex)
+CollectSpellbookEntries = function(tabIndex, includeFuture)
 	local entries = {}
 	local tabName, _, tabOffset, numSpells = GetSpellTabInfo(tabIndex)
 	if not tabName then
@@ -244,7 +337,8 @@ CollectSpellbookEntries = function(tabIndex)
 	for i = 1, numSpells do
 		local slot = tabOffset + i
 		local spellType, spellID = GetSpellBookItemInfo(slot, "spell")
-		if spellType == "SPELL" and spellID then
+		local isFuture = includeFuture and spellType == "FUTURESPELL"
+		if (spellType == "SPELL" or isFuture) and spellID then
 			local name, subName = GetSpellBookItemName(slot, "spell")
 			local icon = GetSpellBookItemTexture(slot, "spell")
 			if name and name ~= "" and ShouldIncludeSpellForFaction(name) then
@@ -255,7 +349,9 @@ CollectSpellbookEntries = function(tabIndex)
 					spellID = spellID,
 					bookSlot = slot,
 					bookType = "spell",
-					learned = true,
+					learned = not isFuture,
+					reqLevel = isFuture and GetSpellRequiredLevel(spellID) or 0,
+					trainCost = 0,
 				})
 			end
 		end
@@ -387,8 +483,9 @@ local function UpdateScroll()
 				end
 			end
 
+			local startAttack = ShouldStartAttack(entry)
 			button:SetAttribute("type", "macro")
-			button:SetAttribute("macrotext", "#showtooltip " .. "\n/cast " .. entry.name)
+			button:SetAttribute("macrotext", BuildMacroText(entry.name, startAttack))
 			button.entry = entry
 		else
 			button:Hide()
@@ -435,21 +532,27 @@ local function RebuildEntries()
 	UpdateClassTabHighlights(SpellbookProFrame)
 
 	local spellTabIndex = classTabIndices[selectedTabIndex]
-	allEntries = CollectSpellbookEntries(spellTabIndex)
+	local showUnlearned = SpellbookProFrame.showUnlearnedCheck and SpellbookProFrame.showUnlearnedCheck:GetChecked()
+	allEntries = CollectSpellbookEntries(spellTabIndex, showUnlearned)
 
 	local learnedByName = {}
 	local learnedByID = {}
+	local presentByID = {}
 	for _, entry in ipairs(allEntries) do
-		learnedByName[entry.name] = true
 		if entry.spellID then
-			learnedByID[entry.spellID] = true
+			presentByID[entry.spellID] = true
+		end
+		if entry.learned then
+			learnedByName[entry.name] = true
+			if entry.spellID then
+				learnedByID[entry.spellID] = true
+			end
 		end
 	end
 
-	local showUnlearned = SpellbookProFrame.showUnlearnedCheck and SpellbookProFrame.showUnlearnedCheck:GetChecked()
 	if showUnlearned then
 		local selectedSpec = classSpecByTabIndex[spellTabIndex]
-		local classSpells = SpellbookProSpellDB and SpellbookProSpellDB.classes and SpellbookProSpellDB.classes[classToken]
+		local classSpells = ActiveSpellDB and ActiveSpellDB.classes and ActiveSpellDB.classes[classToken]
 		if classSpells then
 			local function IsKnownSpellID(spellID)
 				if learnedByID[spellID] then
@@ -479,7 +582,7 @@ local function RebuildEntries()
 							nextRank = nil
 						end
 					end
-					if nextRank and type(nextRank.id) == "number" then
+					if nextRank and type(nextRank.id) == "number" and not presentByID[nextRank.id] then
 						local localizedName, localizedRank, localizedIcon
 						if GetSpellInfo then
 							localizedName, localizedRank, localizedIcon = GetSpellInfo(nextRank.id)
@@ -497,6 +600,7 @@ local function RebuildEntries()
 							learned = false,
 							label = label or false,
 						})
+						presentByID[nextRank.id] = true
 					end
 				end
 			end
@@ -627,6 +731,30 @@ local function CreateMainWindow()
 	end)
 	frame.showUnlearnedCheck = showUnlearnedCheck
 
+	local startAttackCheck = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
+	startAttackCheck:SetPoint("TOPLEFT", 160, -70)
+	startAttackCheck.text:SetText("add /startattack")
+	startAttackCheck:SetChecked(SpellbookProDB.startAttackMacros)
+	startAttackCheck:SetScript("OnEnter", function(self)
+		GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+		GameTooltip:AddLine("Advanced macro feature")
+		GameTooltip:AddLine("When enabled, damage/attack spells get /startattack added.", 1, 1, 1, true)
+		GameTooltip:Show()
+	end)
+	startAttackCheck:SetScript("OnLeave", function()
+		GameTooltip:Hide()
+	end)
+	startAttackCheck:SetScript("OnClick", function()
+		if InCombatLockdown() then
+			UIErrorsFrame:AddMessage("Spellbook-Pro: Can't refresh during combat", 1, 0.2, 0.2)
+			startAttackCheck:SetChecked(not startAttackCheck:GetChecked())
+			return
+		end
+		SpellbookProDB.startAttackMacros = startAttackCheck:GetChecked() and true or false
+		UpdateScroll()
+	end)
+	frame.startAttackCheck = startAttackCheck
+
 	frame.selectedClassTabIndex = SpellbookProDB.selectedClassTabIndex or 1
 
 	frame.classTabButtons = {}
@@ -697,8 +825,9 @@ local function CreateMainWindow()
 			end
 
 			local key = tostring(self.entry.spellID or self.entry.name)
-			local macroName = "SBP" .. key
-			local body = BuildSBPMacroBody(self.entry.name, key)
+			local startAttack = ShouldStartAttack(self.entry)
+			local macroName = "SBP" .. (startAttack and "+" or "") .. key
+			local body = BuildSBPMacroBodyWithStartAttack(self.entry.name, (startAttack and "+" or "") .. key, startAttack)
 
 			local index = GetMacroIndexByName(macroName)
 			local numGlobal, numChar = GetNumMacros()

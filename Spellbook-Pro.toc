@@ -1,9 +1,10 @@
-## Interface: 11508
+## Interface: 11508, 20505
 ## Title: Spellbook-Pro
 ## Notes: Spellbook replacement window with highest-rank spell buttons
 ## Author: christianraudzis
-## Version: 1.1.2
+## Version: 1.2
 ## SavedVariables: SpellbookProDB
 
 SpellbookPro_SpellDB.lua
+SpellbookPro_SpellDB_BCC.lua
 Spellbook-Pro.lua

@@ -1,5 +1,9 @@
 ## CHANGELOG
 
+# 1.2
+- Added Burning Crusade Classic support with expansion detection, optional BCC spell DB selection, and future-spell listing when "Show unlearned" is enabled.
+- Added advanced macro toggle to include /startattack for damage/attack spell.
+
 # 1.1.2
 - license update
 
