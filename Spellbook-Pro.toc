@@ -1,9 +1,11 @@
 ## Interface: 11508, 20505
 ## Title: Spellbook-Pro
 ## Notes: Spellbook replacement window with highest-rank spell buttons
-## Author: christianraudzis
-## Version: 1.2
+## Version: 1.2.1
 ## SavedVariables: SpellbookProDB
+## Author: Hase
+## IconTexture: Interface/AddOns/Spellbook-Pro/Media/logo.blp
+
 
 SpellbookPro_SpellDB.lua
 SpellbookPro_SpellDB_BCC.lua
