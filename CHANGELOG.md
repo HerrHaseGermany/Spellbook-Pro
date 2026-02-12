@@ -1,5 +1,15 @@
 ## CHANGELOG
 
+# 1.3.2
+- Spellbook-Pro only updates macros that exactly match its own generated body, preventing overwrites of edited or custom macros.
+- minor fixes
+
+# 1.3.1
+- Spellbook-Pro now only updates macros that keep the `SBP` name prefix, so renamed macros will not be overwritten.
+
+# 1.3
+- fixed Macros could not be created becaus of full Macro list, this now overflows to global macro list when personal is full.
+
 # 1.2.1
 - add Logo
 - minor fix

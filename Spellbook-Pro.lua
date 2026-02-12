@@ -190,6 +190,46 @@ local function BuildSBPMacroBody(spellName, key)
 	return "#showtooltip " .. spellName .. "\n/cast " .. spellName .. "\n#sbp " .. key
 end
 
+local function IsPassiveSpellEntry(spellID, spellName)
+	if type(IsPassiveSpell) ~= "function" then
+		return false
+	end
+	if spellID and IsPassiveSpell(spellID) then
+		return true
+	end
+	if spellName and spellName ~= "" and IsPassiveSpell(spellName) then
+		return true
+	end
+	return false
+end
+
+local function FindExistingSBPMacroIndex(spellName, key, startAttack)
+	local numGlobal, numChar = GetNumMacros()
+	local total = numGlobal + numChar
+	if total == 0 then
+		return nil
+	end
+
+	local expectedBody = BuildSBPMacroBodyWithStartAttack(spellName, key, startAttack)
+
+	-- Prefer character macros first.
+	for i = numGlobal + 1, total do
+		local name, _, body = GetMacroInfo(i)
+		if name and name:sub(1, 3) == "SBP" and body == expectedBody then
+			return i
+		end
+	end
+
+	for i = 1, numGlobal do
+		local name, _, body = GetMacroInfo(i)
+		if name and name:sub(1, 3) == "SBP" and body == expectedBody then
+			return i
+		end
+	end
+
+	return nil
+end
+
 local function IsDamageSpell(entry)
 	if not entry then
 		return false
@@ -341,7 +381,7 @@ CollectSpellbookEntries = function(tabIndex, includeFuture)
 		if (spellType == "SPELL" or isFuture) and spellID then
 			local name, subName = GetSpellBookItemName(slot, "spell")
 			local icon = GetSpellBookItemTexture(slot, "spell")
-			if name and name ~= "" and ShouldIncludeSpellForFaction(name) then
+			if name and name ~= "" and ShouldIncludeSpellForFaction(name) and not IsPassiveSpellEntry(spellID, name) then
 				table.insert(entries, {
 					name = name,
 					subName = subName,
@@ -827,20 +867,39 @@ local function CreateMainWindow()
 			local key = tostring(self.entry.spellID or self.entry.name)
 			local startAttack = ShouldStartAttack(self.entry)
 			local macroName = "SBP" .. (startAttack and "+" or "") .. key
-			local body = BuildSBPMacroBodyWithStartAttack(self.entry.name, (startAttack and "+" or "") .. key, startAttack)
+			if #macroName > 16 then
+				macroName = macroName:sub(1, 16)
+			end
+			local sbpKey = (startAttack and "+" or "") .. key
+			local body = BuildSBPMacroBodyWithStartAttack(self.entry.name, sbpKey, startAttack)
 
 			local index = GetMacroIndexByName(macroName)
 			local numGlobal, numChar = GetNumMacros()
+			if index and index > 0 then
+				local _, _, existingBody = GetMacroInfo(index)
+				if existingBody ~= body then
+					UIErrorsFrame:AddMessage("Spellbook-Pro: Macro name is already in use (not a Spellbook-Pro macro)", 1, 0.2, 0.2)
+					return
+				end
+			else
+				index = FindExistingSBPMacroIndex(self.entry.name, sbpKey, startAttack)
+			end
 
 			if index and index > 0 then
 				EditMacro(index, macroName, self.entry.icon or "Interface\\Icons\\INV_Misc_QuestionMark", body, index > numGlobal)
 			else
-				if (numGlobal + numChar) >= 120 then
+				local maxGlobal = MAX_ACCOUNT_MACROS or 120
+				local maxChar = MAX_CHARACTER_MACROS or 18
+				if (numGlobal + numChar) >= (maxGlobal + maxChar) then
 					UIErrorsFrame:AddMessage("Spellbook-Pro: Macro list is full", 1, 0.2, 0.2)
 					return
 				end
 
-				local ok, createdIndex = pcall(CreateMacro, macroName, self.entry.icon or "Interface\\Icons\\INV_Misc_QuestionMark", body, true)
+				local perCharacter = numChar < maxChar
+				local ok, createdIndex = pcall(CreateMacro, macroName, self.entry.icon or "Interface\\Icons\\INV_Misc_QuestionMark", body, perCharacter)
+				if (not ok or not createdIndex) and perCharacter and numGlobal < maxGlobal then
+					ok, createdIndex = pcall(CreateMacro, macroName, self.entry.icon or "Interface\\Icons\\INV_Misc_QuestionMark", body, false)
+				end
 				if not ok or not createdIndex then
 					UIErrorsFrame:AddMessage("Spellbook-Pro: Macro list is full", 1, 0.2, 0.2)
 					return
