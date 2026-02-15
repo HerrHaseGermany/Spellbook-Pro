@@ -190,6 +190,32 @@ local function BuildSBPMacroBody(spellName, key)
 	return "#showtooltip " .. spellName .. "\n/cast " .. spellName .. "\n#sbp " .. key
 end
 
+local function FindMacroIndexByName(name)
+	if not name or name == "" then
+		return 0
+	end
+
+	local index = GetMacroIndexByName(name)
+	if index and index > 0 then
+		return index
+	end
+
+	-- GetMacroIndexByName can miss case-insensitive matches; scan to avoid duplicate-name errors.
+	local nameLower = name:lower()
+	local numGlobal, numChar = GetNumMacros()
+	local total = numGlobal + numChar
+	for i = 1, total do
+		local macroName = GetMacroInfo(i)
+		if macroName and macroName:lower() == nameLower then
+			return i
+		end
+	end
+
+	return 0
+end
+
+local BuildSBPMacroBodyWithStartAttack
+
 local function IsPassiveSpellEntry(spellID, spellName)
 	if type(IsPassiveSpell) ~= "function" then
 		return false
@@ -281,7 +307,7 @@ local function BuildMacroText(spellName, startAttack)
 	return "#showtooltip " .. spellName .. "\n/cast " .. spellName
 end
 
-local function BuildSBPMacroBodyWithStartAttack(spellName, key, startAttack)
+BuildSBPMacroBodyWithStartAttack = function(spellName, key, startAttack)
 	if startAttack then
 		return "#showtooltip " .. spellName .. "\n/startattack\n/cast " .. spellName .. "\n#sbp " .. key
 	end
@@ -873,13 +899,20 @@ local function CreateMainWindow()
 			local sbpKey = (startAttack and "+" or "") .. key
 			local body = BuildSBPMacroBodyWithStartAttack(self.entry.name, sbpKey, startAttack)
 
-			local index = GetMacroIndexByName(macroName)
+			local index = FindMacroIndexByName(macroName)
 			local numGlobal, numChar = GetNumMacros()
 			if index and index > 0 then
-				local _, _, existingBody = GetMacroInfo(index)
-				if existingBody ~= body then
-					UIErrorsFrame:AddMessage("Spellbook-Pro: Macro name is already in use (not a Spellbook-Pro macro)", 1, 0.2, 0.2)
-					return
+				local existingName, _, existingBody = GetMacroInfo(index)
+				local isSBPMacro = existingName and existingName:sub(1, 3) == "SBP"
+				if (not isSBPMacro) and existingBody ~= body then
+					-- Name collision (often due to 16-char truncation). Try to reuse an existing SBP macro by body.
+					local existingIndex = FindExistingSBPMacroIndex(self.entry.name, sbpKey, startAttack)
+					if existingIndex and existingIndex > 0 then
+						index = existingIndex
+					else
+						UIErrorsFrame:AddMessage("Spellbook-Pro: Macro name is already in use (not a Spellbook-Pro macro)", 1, 0.2, 0.2)
+						return
+					end
 				end
 			else
 				index = FindExistingSBPMacroIndex(self.entry.name, sbpKey, startAttack)
@@ -975,7 +1008,7 @@ local function CreateMinimapButton()
 	local icon = button:CreateTexture(nil, "BACKGROUND")
 	icon:SetSize(20, 20)
 	icon:SetPoint("CENTER", 0, 1)
-	icon:SetTexture("Interface\\Icons\\INV_Misc_Book_09")
+	icon:SetTexture("Interface\\AddOns\\Spellbook-Pro\\Media\\logo.blp")
 	button.icon = icon
 
 	local border = button:CreateTexture(nil, "OVERLAY")

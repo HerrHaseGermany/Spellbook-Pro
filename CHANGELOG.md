@@ -1,5 +1,10 @@
 ## CHANGELOG
 
+# 1.3.3
+- changed minimapbuttonicon
+- fixed error message creating a macro duplicate
+- allow dragging SBP macros multiple times without false "not a Spellbook-Pro macro" error
+
 # 1.3.2
 - Spellbook-Pro only updates macros that exactly match its own generated body, preventing overwrites of edited or custom macros.
 - minor fixes
