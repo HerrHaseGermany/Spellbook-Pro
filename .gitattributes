@@ -1,0 +1,11 @@
+
+# Git archive allowlist: exclude new files until their runtime role is reviewed.
+# Keep this list in sync with every client TOC, XML include and dynamic resource.
+* export-ignore
+/Media -export-ignore
+/LICENSE -export-ignore
+/Media/logo.blp -export-ignore
+/Spellbook-Pro.lua -export-ignore
+/Spellbook-Pro.toc -export-ignore
+/SpellbookPro_SpellDB.lua -export-ignore
+/SpellbookPro_SpellDB_BCC.lua -export-ignore
